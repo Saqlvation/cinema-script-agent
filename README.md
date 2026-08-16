@@ -14,10 +14,10 @@ An autonomous multi-step agent pipeline built for the **Agentic Cinema Hackathon
 
 ### Quickstart
 1. **Clone the repository:**
-   ```bash
+```bash
    git clone https://github.com/Saqlvation/cinema-script-agent.git
    cd cinema-script-agent
-   
+``` 
 
 2. **Set up virtual environment:**
 ```bash

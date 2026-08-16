@@ -1,73 +1,125 @@
+"""
+🎬 Agentic Cinema — The Full Pipeline
+
+A deterministic 3-step agent that transforms film concepts into:
+1. Structured screenplays (ScriptAgent / Director)
+2. Visual storyboards with AI prompts (StoryboardAgent / Cinematographer)
+3. Live pitch decks deployed via Replit (DeployAgent / Producer)
+
+Run: python main.py
+"""
+
+import json
 import os
-import time
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from google.genai.errors import ServerError, APIError
+from datetime import datetime
 
-load_dotenv()
+from agents.script_agent import ScriptAgent
+from agents.storyboard_agent import StoryboardAgent
+from agents.deploy_agent import DeployAgent
 
-def create_replit_workspace(project_title: str, language: str, index_html_content: str) -> dict:
+
+def save_json(data: dict, filepath: str):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"  💾 Saved: {filepath}")
+
+
+def save_html(html: str, filepath: str):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"  💾 Saved: {filepath}")
+
+
+def run_pipeline(concept: str) -> dict:
     """
-    Creates a live Replit workspace for film promotional pages and interactive storyboards.
-
-    Args:
-        project_title: Name of the Replit project or workspace.
-        language: Workspace environment template (e.g., 'html', 'python').
-        index_html_content: Raw HTML content for the landing page or storyboard viewer.
+    Runs the full 3-step agentic pipeline.
+    Returns a dict with all artifacts and deployment info.
     """
-    print(f"\n[TOOL CALLED] Provisioning Replit Workspace: '{project_title}'...")
-    
-    return {
-        "status": "success",
-        "workspace_url": f"https://replit.com/@demo/{project_title}",
-        "live_site_url": f"https://{project_title}.replit.app",
-        "files_written": ["index.html"]
-    }
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = f"run_{timestamp}"
 
-def run_agent():
-    api_key = os.getenv("GEMINI_API_KEY")
-    
-    if not api_key or api_key == "your_gemini_api_key_here":
-        print("[Notice] GEMINI_API_KEY missing in .env. Running local tool test:\n")
-        res = create_replit_workspace(
-            project_title="mars-thriller-teaser",
-            language="html",
-            index_html_content="<h1>Mars Thriller Landing Page</h1>"
-        )
-        print("Mock Tool Result:", res)
-        return
+    print("=" * 60)
+    print("🎬 AGENTIC CINEMA — Production Pipeline")
+    print("=" * 60)
+    print(f"\n📝 Input Concept: {concept}\n")
 
-    client = genai.Client(api_key=api_key)
+    # ── STEP 1: DIRECTOR ──
+    director = ScriptAgent()
+    screenplay = director.develop(concept)
 
-    # Candidate models to try sequentially in case of 503 traffic spikes
-    candidate_models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest"]
-    
-    prompt = (
-        "Generate a landing page for a psychological thriller script called 'Echoes of Silence'. "
-        "Use the create_replit_workspace tool to provision the workspace with full HTML."
+    save_json(screenplay, f"output/{run_id}/screenplay.json")
+
+    # ── STEP 2: STORYBOARD ARTIST ──
+    cinematographer = StoryboardAgent()
+    storyboard = cinematographer.generate(screenplay)
+
+    save_html(storyboard["html"], f"output/{run_id}/storyboard.html")
+
+    # ── STEP 3: PRODUCER ──
+    producer = DeployAgent()
+    pitch_deck_html = producer.build_pitch_deck(screenplay, storyboard)
+
+    deployment = producer.deploy(
+        project_title=screenplay["title"],
+        html_content=pitch_deck_html,
     )
 
-    for model_name in candidate_models:
-        print(f"Attempting execution with model: '{model_name}'...")
-        try:
-            chat = client.chats.create(
-                model=model_name,
-                config=types.GenerateContentConfig(
-                    tools=[create_replit_workspace],
-                    temperature=0.2,
-                )
-            )
+    # Save pitch deck locally too
+    save_html(pitch_deck_html, f"output/{run_id}/pitch_deck.html")
 
-            response = chat.send_message(prompt)
-            print("\nAgent Response:\n", response.text)
-            break
-        except (ServerError, APIError) as e:
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                print(f"[Warning] {model_name} busy (503). Retrying with next model...\n")
-                time.sleep(1)
-            else:
-                raise e
+    # Summary
+    print("\n" + "=" * 60)
+    print("✅ PRODUCTION COMPLETE")
+    print("=" * 60)
+    print(f"\n📁 Run ID: {run_id}")
+    print(f"🎬 Film: {screenplay['title']}")
+    print(f"🎭 Characters: {len(screenplay['characters'])}")
+    print(f"📜 Scenes: {len(screenplay['scenes'])}")
+    print(f"🎨 Storyboard Panels: {len(storyboard['panels'])}")
+    print(f"\n📂 Local Output: output/{run_id}/")
+    print(f"   ├── screenplay.json")
+    print(f"   ├── storyboard.html")
+    print(f"   └── pitch_deck.html")
+
+    if deployment.get("mode") == "MOCK":
+        print(f"\n  Replit deploy is in MOCK mode.")
+        print(f"   Local preview: file://{deployment['local_path']}")
+        print(f"   When Replit API credits arrive, swap tools/replit_api.py")
+    else:
+        print(f"\n🚀 Live URL: {deployment['live_site_url']}")
+
+    return {
+        "run_id": run_id,
+        "screenplay": screenplay,
+        "storyboard": storyboard,
+        "deployment": deployment,
+    }
+
+
+def main():
+    print("\n Welcome to Agentic Cinema")
+    print("Type your film concept below, or press Enter to use the demo concept.\n")
+
+    demo_concept = (
+        "A reclusive sound engineer who starts hearing fragments of conversations "
+        "from 24 hours in the future, and must decide whether to prevent a tragedy "
+        "she overhears or let fate play out."
+    )
+
+    user_input = input(f"Film concept: ").strip()
+    concept = user_input if user_input else demo_concept
+
+    if not user_input:
+        print(f"\n(Using demo concept: {concept})\n")
+
+    try:
+        result = run_pipeline(concept)
+    except Exception as e:
+        print(f"\n❌ Pipeline failed: {e}")
+        raise
+
 
 if __name__ == "__main__":
-    run_agent()
+    main()
